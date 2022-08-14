@@ -1,7 +1,7 @@
+import datetime as dt
+
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
-
-import datetime as dt
 
 from .models import CHOICES, Achievement, AchievementCat, Cat, User
 
@@ -27,11 +27,40 @@ class CatSerializer(serializers.ModelSerializer):
     achievements = AchievementSerializer(many=True, required=False)
     color = serializers.ChoiceField(choices=CHOICES)
     age = serializers.SerializerMethodField()
-    
+    # owner = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    # это обеспечит работу валидатора по сочетанию имени кота и владельцу
+    # но hidden не попадают в ответ от сериализатора
+    owner = serializers.PrimaryKeyRelatedField(
+        read_only=True, default=serializers.CurrentUserDefault())
+
+    #  owner = serializers.PrimaryKeyRelatedField(read_only=True)
+    # альтернатива для read_only_fields
+
     class Meta:
         model = Cat
         fields = ('id', 'name', 'color', 'birth_year', 'achievements', 'owner',
                   'age')
+        # read_only_fields = ('owner',)
+        # не нужны, так как прописали явно в переопределнии поля owner
+
+        validators = [
+            UniqueTogetherValidator(
+                queryset=Cat.objects.all(),
+                fields=('name', 'owner')
+            )
+        ]
+
+    def validate(self, data):
+        if data['color'] == data['name']:
+            raise serializers.ValidationError(
+                'Имя не может совпадать с цветом!')
+        return data
+
+    def validate_birth_year(self, value):
+        year = dt.date.today().year
+        if not (year - 40 < value <= year):
+            raise serializers.ValidationError('Проверьте год рождения!')
+        return value
 
     def get_age(self, obj):
         return dt.datetime.now().year - obj.birth_year
